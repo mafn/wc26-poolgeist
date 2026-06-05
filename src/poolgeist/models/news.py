@@ -34,7 +34,6 @@ class NewsSignalModel:
         home = poisson.pmf(goals, self.home_xg)
         away = poisson.pmf(goals, self.away_xg)
         matrix = np.outer(home, away)
-        matrix = np.outer(home, away)
         return matrix_to_signal(
             matrix,
             model_name="news_signals",

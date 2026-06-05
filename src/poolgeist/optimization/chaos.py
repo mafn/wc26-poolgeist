@@ -35,8 +35,12 @@ def chaos_index(
 
     w = weights or ChaosWeights()
     matrix = signal.score_matrix
-    score_entropy = -float(np.sum(matrix * np.log(np.clip(matrix, 1e-12, 1.0)))) / float(
-        np.log(matrix.size)
+    score_entropy_denominator = float(np.log(matrix.size))
+    score_entropy = (
+        0.0
+        if score_entropy_denominator <= 0
+        else -float(np.sum(matrix * np.log(np.clip(matrix, 1e-12, 1.0))))
+        / score_entropy_denominator
     )
     tendencies = np.array(list(signal.tendency_probs.values()), dtype=float)
     tendency_entropy = -float(np.sum(tendencies * np.log(np.clip(tendencies, 1e-12, 1.0)))) / float(

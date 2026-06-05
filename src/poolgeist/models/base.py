@@ -44,8 +44,11 @@ def matrix_to_signal(
     }
     tendency = normalize({"home": home_prob, "draw": draw_prob, "away": away_prob})
     favourite_clean_sheet = max(float(matrix[:, 0].sum()), float(matrix[0, :].sum()))
-    entropy = -float(np.sum(matrix * np.log(np.clip(matrix, 1e-12, 1.0)))) / float(
-        np.log(matrix.size)
+    entropy_denominator = float(np.log(matrix.size))
+    entropy = (
+        0.0
+        if entropy_denominator <= 0
+        else -float(np.sum(matrix * np.log(np.clip(matrix, 1e-12, 1.0)))) / entropy_denominator
     )
     return ModelSignal(
         model_name=model_name,

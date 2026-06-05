@@ -15,13 +15,21 @@ from poolgeist.simulation.knockout import simulate_knockout_match
 def simulate_simple_knockout(
     teams: Sequence[str], model: MatchModel, *, seed: int | None = 2026
 ) -> pd.DataFrame:
-    """Simulate a simple neutral knockout bracket and return champion counts."""
+    """Simulate a simple neutral knockout bracket and return champion counts.
 
+    Odd-length rounds are handled by giving the final unpaired team a bye into the next round.
+    """
+
+    if not teams:
+        raise ValueError("At least one team is required to simulate a knockout bracket.")
     generator = np.random.default_rng(seed)
     current = list(teams)
     while len(current) > 1:
         next_round = []
         for i in range(0, len(current), 2):
+            if i + 1 >= len(current):
+                next_round.append(current[i])
+                continue
             next_round.append(
                 simulate_knockout_match(
                     current[i], current[i + 1], model, generator=generator

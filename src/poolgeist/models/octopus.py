@@ -51,14 +51,6 @@ class RandomOctopusOracle:
     def oracle_chaos_pick(self, home_team: str, away_team: str) -> str:
         """Return one deterministic novelty pick label."""
 
-        signal = matrix_to_signal(
-            np.ones((2, 2)),
-            model_name="tmp",
-            model_weight=0,
-            home_team=home_team,
-            away_team=away_team,
-        )
-        del signal
         key = f"pick:{self.seed}:{home_team}:{away_team}"
         seed = int.from_bytes(hashlib.sha256(key.encode()).digest()[:4], "big")
         rng = np.random.default_rng(seed)

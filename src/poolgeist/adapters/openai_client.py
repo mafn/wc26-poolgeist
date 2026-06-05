@@ -1,7 +1,8 @@
-"""Optional OpenAI Responses API adapter for structured news extraction."""
+"""Optional OpenAI chat-completions adapter for structured news extraction."""
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from typing import Any
 
@@ -14,30 +15,39 @@ class OpenAIResponsesAdapter:
         self.model = model or os.getenv("OPENAI_MODEL")
         self.enabled = bool(self.api_key and self.model)
         self.warning: str | None = None
-        try:
-            from openai import OpenAI  # noqa: PLC0415
-        except Exception:  # noqa: BLE001
-            self.client = None
-            if self.enabled:
-                self.warning = "OpenAI package is not installed; LLM news extraction is disabled."
+        self.client: Any | None = None
+
+        if not self.enabled:
+            self.warning = (
+                "OPENAI_API_KEY and OPENAI_MODEL are required; LLM news extraction is disabled."
+            )
+            return
+        if importlib.util.find_spec("openai") is None:
+            self.warning = "OpenAI package is not installed; LLM news extraction is disabled."
             self.enabled = False
-        else:
-            self.client = OpenAI(api_key=self.api_key) if self.enabled else None
-            if not self.enabled:
-                self.warning = (
-                    "OPENAI_API_KEY and OPENAI_MODEL are required; LLM news extraction is disabled."
-                )
+            return
+
+        from openai import OpenAI  # noqa: PLC0415
+
+        self.client = OpenAI(api_key=self.api_key)
 
     def extract_structured_signal(self, text: str) -> dict[str, Any] | None:
-        """Extract structured news signals, returning None when disabled."""
+        """Extract structured news signals via chat completions, returning None when disabled."""
 
         if not self.enabled or self.client is None or self.model is None:
             return None
-        response = self.client.responses.create(
+        response = self.client.chat.completions.create(
             model=self.model,
-            input=(
-                "Extract only structured football team news modifiers. Do not make predictions.\n"
-                + text
-            ),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract only structured football team news modifiers. "
+                        "Do not make predictions."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
         )
-        return {"raw_text": getattr(response, "output_text", ""), "model": self.model}
+        content = response.choices[0].message.content
+        return {"raw_text": content or "", "model": self.model}
