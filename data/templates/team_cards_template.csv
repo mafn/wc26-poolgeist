@@ -1,3 +1,2 @@
-team_id,team_name,neutral_strength,notes
-TEAM_A,Neutral Team A,0.50,Synthetic placeholder only
-TEAM_B,Neutral Team B,0.50,Synthetic placeholder only
+team,group,base_rating,attack,defense,speed,control,set_pieces,mentality,chaos,stamina,penalty_skill,clutch,star_concentration,rotation_depth,aerial_strength,goalkeeper_quality,pressing_intensity,low_block_quality,transition_threat,possession_security,defensive_line_height,discipline,tournament_experience,abilities,weaknesses,status_effects,notes
+Neutral Team,A,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,,,,Synthetic template row only

@@ -1,4 +1,4 @@
-"""Optional tavily search adapter."""
+"""Optional bing search adapter."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ import os
 from poolgeist.adapters.search_base import SearchResult
 
 
-class TavilySearchProvider:
-    """Gracefully degrading tavily provider wrapper."""
+class BingSearchProvider:
+    """Gracefully degrading bing provider wrapper."""
 
-    provider_name = "tavily"
+    provider_name = "bing"
 
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or os.getenv("TAVILY_API_KEY")
+        self.api_key = api_key or os.getenv("BING_SEARCH_API_KEY")
 
     def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
         """Return no results when credentials or optional dependencies are absent."""
