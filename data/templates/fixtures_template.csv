@@ -1,0 +1,2 @@
+match_id,stage,group,home_team,away_team,neutral_venue
+M001,group,A,TEAM_A,TEAM_B,true
