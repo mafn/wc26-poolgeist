@@ -27,7 +27,9 @@ def _normalize_array(values: np.ndarray) -> np.ndarray:
     if np.isnan(values).any():
         raise ValueError("Probabilities must not contain NaN values.")
     if (values < 0).any():
-        raise ValueError("Probabilities must be non-negative.")
+        if (values < -1e-9).any():
+            raise ValueError("Probabilities must be non-negative.")
+        values = np.maximum(values, 0.0)
     total = float(values.sum())
     if total <= 0:
         raise ValueError("At least one probability weight must be positive.")

@@ -10,7 +10,7 @@ def test_correct_goal_difference_gets_difference_points():
 
 
 def test_correct_tendency_gets_tendency_points():
-    assert score_prediction(2, 0, 1, 0) == 3
+    assert score_prediction(2, 1, 3, 0) == 2
 
 
 def test_negative_goals_are_rejected():

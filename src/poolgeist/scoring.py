@@ -41,8 +41,17 @@ def score_prediction(
     if any(value < 0 for value in values):
         raise ValueError("Goals must be non-negative integers.")
 
+    points = 0
     if (predicted_home, predicted_away) == (actual_home, actual_away):
-        return rules.exact
+        points = rules.exact
+    else:
+        predicted_outcome = outcome(predicted_home, predicted_away)
+        actual_outcome = outcome(actual_home, actual_away)
+        if predicted_outcome == actual_outcome:
+            if predicted_home - predicted_away == actual_home - actual_away:
+                points = max(points, rules.goal_difference)
+            else:
+                points = max(points, rules.tendency)
 
     points = 0
     predicted_outcome = outcome(predicted_home, predicted_away)

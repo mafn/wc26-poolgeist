@@ -12,12 +12,12 @@ def choose_winner(
     away_team: str,
     signal: ModelSignal,
     *,
-    seed: int | None = None,
+    generator: np.random.Generator | None = None,
 ) -> str:
     """Choose a knockout winner, splitting draw probability equally before penalties."""
 
-    generator = np.random.default_rng(seed)
-    home_probability = signal.home + signal.draw / 2.0
+    gen = generator or np.random.default_rng()
+    home_probability = float(np.clip(signal.home + signal.draw / 2.0, 0.0, 1.0))
     return str(
-        generator.choice([home_team, away_team], p=[home_probability, 1.0 - home_probability])
+        gen.choice([home_team, away_team], p=[home_probability, 1.0 - home_probability])
     )
