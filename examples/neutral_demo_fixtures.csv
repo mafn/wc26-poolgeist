@@ -1,0 +1,3 @@
+match_id,stage,group,home_team,away_team,neutral_venue
+D001,group,A,NEU_A,NEU_B,true
+D002,group,B,NEU_C,NEU_D,true
