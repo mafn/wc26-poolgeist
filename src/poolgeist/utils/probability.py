@@ -41,7 +41,9 @@ def assert_probability_vector(
 ) -> None:
     """Raise if values are not finite, non-negative, and summing to one."""
 
-    array = np.array(list(values.values()) if isinstance(values, Mapping) else values, dtype=float)
+    array = np.array(
+        list(values.values()) if isinstance(values, Mapping) else list(values), dtype=float
+    )
     if np.isnan(array).any() or not np.isfinite(array).all():
         raise ValueError("Probabilities must be finite and non-NaN.")
     if (array < -atol).any():

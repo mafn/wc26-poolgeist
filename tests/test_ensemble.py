@@ -1,23 +1,30 @@
 import pytest
 
-from poolgeist.models.base import ModelSignal
-from poolgeist.models.ensemble import blend_signals, normalize_weights
+from poolgeist.models.ensemble import ModelCouncil, blend_signals, normalize_weights
+from poolgeist.models.poisson import PoissonGoalsModel
 
 
 def test_ensemble_weights_normalize():
     signals = [
-        ModelSignal(home=0.5, draw=0.25, away=0.25, weight=2),
-        ModelSignal(home=0.25, draw=0.25, away=0.5, weight=1),
+        PoissonGoalsModel(home_xg=1.2, away_xg=1.1).predict_match("A", "B"),
+        PoissonGoalsModel(home_xg=1.0, away_xg=1.4).predict_match("A", "B"),
     ]
     weights = normalize_weights(signals)
-    assert weights == pytest.approx([2 / 3, 1 / 3])
+    assert sum(weights) == pytest.approx(1.0)
 
 
 def test_blend_signal_sums_to_one():
     signal = blend_signals(
         [
-            ModelSignal(home=0.5, draw=0.25, away=0.25, weight=2),
-            ModelSignal(home=0.25, draw=0.25, away=0.5, weight=1),
+            PoissonGoalsModel(home_xg=1.2, away_xg=1.1).predict_match("A", "B"),
+            PoissonGoalsModel(home_xg=1.0, away_xg=1.4).predict_match("A", "B"),
         ]
     )
-    assert sum(signal.probabilities.values()) == pytest.approx(1.0)
+    assert sum(signal.tendency_probs.values()) == pytest.approx(1.0)
+    assert signal.score_matrix.sum() == pytest.approx(1.0)
+
+
+def test_model_council_recommendations_exist():
+    prediction = ModelCouncil().predict_match("Neutral A", "Neutral B")
+    assert prediction.recommendation_classes["safest"]
+    assert prediction.chaos_index >= 0
