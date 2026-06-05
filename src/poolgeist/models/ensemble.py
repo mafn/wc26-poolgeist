@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 
 import numpy as np
 import pandas as pd
 
-from poolgeist.config import EnsembleConfig, ScoringConfig, StrategyConfig
+from poolgeist.config import EnsembleConfig, ModelWeightsConfig, ScoringConfig, StrategyConfig
 from poolgeist.models.base import MatchModel, matrix_to_signal
 from poolgeist.models.bayesian_update import BayesianFormUpdateModel
 from poolgeist.models.correlated_goals import CorrelatedGoalsModel
@@ -53,6 +53,53 @@ def normalize_weights(signals: Iterable[ModelSignal]) -> list[float]:
     ).tolist()
 
 
+MODEL_NAME_TO_WEIGHT_KEY = {
+    "independent_poisson": "poisson",
+    "dixon_coles": "dixon_coles",
+    "negative_binomial": "negative_binomial",
+    "correlated_goals": "correlated_goals",
+    "skellam_goal_difference": "skellam",
+    "market_prior": "market",
+    "news_signals": "news",
+    "bayesian_form_update": "bayesian_update",
+    "temperature_chaos": "temperature",
+    "ising_pressure": "ising",
+    "spin_flip": "spin_flip",
+    "random_octopus_oracle": "octopus",
+}
+
+
+def configured_weight_for_signal(
+    signal: ModelSignal, weights_config: ModelWeightsConfig
+) -> float | None:
+    """Return the configured weight for a model signal, falling back for custom models."""
+
+    weight_key = MODEL_NAME_TO_WEIGHT_KEY.get(signal.model_name)
+    if weight_key is None:
+        return signal.model_weight
+    return float(asdict(weights_config)[weight_key])
+
+
+def apply_configured_weights(
+    signals: Iterable[ModelSignal], weights_config: ModelWeightsConfig
+) -> list[ModelSignal]:
+    """Apply configured model-council weights and drop zero-weight disabled signals."""
+
+    configured_signals = []
+    for signal in signals:
+        configured_weight = configured_weight_for_signal(signal, weights_config)
+        if configured_weight is None:
+            configured_weight = signal.model_weight
+        if configured_weight < 0:
+            raise ValueError(
+                f"Configured model weight for {signal.model_name} must be non-negative."
+            )
+        if configured_weight == 0:
+            continue
+        configured_signals.append(replace(signal, model_weight=configured_weight))
+    return configured_signals
+
+
 def blend_signals(signals: Iterable[ModelSignal], *, source: str = "ensemble") -> ModelSignal:
     """Blend model signals by normalized model weights."""
 
@@ -61,6 +108,9 @@ def blend_signals(signals: Iterable[ModelSignal], *, source: str = "ensemble") -
     matrix = sum(
         weight * signal.score_matrix for weight, signal in zip(weights, signal_list, strict=True)
     )
+    component_weights = {
+        signal.model_name: weight for signal, weight in zip(signal_list, weights, strict=True)
+    }
     return matrix_to_signal(
         matrix,
         model_name=source,
@@ -69,7 +119,13 @@ def blend_signals(signals: Iterable[ModelSignal], *, source: str = "ensemble") -
         away_team=signal_list[0].away_team,
         explanations=["Weighted council blend; unavailable model weights are redistributed."],
         warnings=[warning for signal in signal_list for warning in signal.warnings],
-        metadata={"components": [signal.model_name for signal in signal_list]},
+        metadata={
+            "components": [signal.model_name for signal in signal_list],
+            "component_weights": component_weights,
+            "configured_model_weights": {
+                signal.model_name: signal.model_weight for signal in signal_list
+            },
+        },
     )
 
 
@@ -110,6 +166,9 @@ class ModelCouncil:
                 warnings.append(f"Model {type(model).__name__} skipped: {exc}")
         if not signals:
             raise ValueError("No model council members produced a valid signal.")
+        signals = apply_configured_weights(signals, self.config.weights)
+        if not signals:
+            raise ValueError("No model council members have positive configured weight.")
         blended = blend_signals(signals)
         disagreement = float(
             np.mean(
