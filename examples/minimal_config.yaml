@@ -1,0 +1,9 @@
+n_simulations: 1000
+random_seed: 2026
+enable_llm_news: false
+enable_web_search: false
+models:
+  poisson_weight: 0.50
+  ising_weight: 0.15
+  spin_flip_weight: 0.10
+  octopus_weight: 0.01
