@@ -137,9 +137,11 @@ class ModelCouncil:
         self,
         models: Sequence[MatchModel] | None = None,
         config: EnsembleConfig | None = None,
+        scoring_config: ScoringConfig | None = None,
         team_modifiers: dict[str, dict[str, Any]] | None = None,
     ):
         self.config = config or EnsembleConfig()
+        self.scoring_config = scoring_config or ScoringConfig()
         self.team_modifiers = team_modifiers or {}
         self.models = list(models) if models is not None else self._default_models()
         for model in self.models:
@@ -169,7 +171,9 @@ class ModelCouncil:
             RandomOctopusOracle(seed=2026),
         ]
 
-    def predict_match(self, home_team: str, away_team: str) -> EnsemblePrediction:
+    def predict_match(
+        self, home_team: str, away_team: str, is_knockout: bool = False
+    ) -> EnsemblePrediction:
         """Predict a match and produce safe/EV/strategic/chaos recommendation classes."""
 
         signals: list[ModelSignal] = []
@@ -191,9 +195,33 @@ class ModelCouncil:
             )
         )
         chaos = chaos_index(blended, model_disagreement=disagreement)
+        if is_knockout:
+            from poolgeist.optimization.exact_scores import adjust_matrix_for_knockout
+            from poolgeist.simulation.penalties import shootout_win_probability_from_tendency
+
+            # Adjust the blended score matrix for extra time and shootout outcomes
+            home_prob_win = shootout_win_probability_from_tendency(blended.tendency_probs)
+            ko_matrix = adjust_matrix_for_knockout(blended.score_matrix, home_prob_win)
+
+            # Rebuild the blended ModelSignal with the knockout-adjusted matrix
+            blended = matrix_to_signal(
+                ko_matrix,
+                model_name=blended.model_name,
+                model_weight=blended.model_weight,
+                home_team=blended.home_team,
+                away_team=blended.away_team,
+                explanations=blended.explanations,
+                warnings=blended.warnings + ["Adjusted for knockout/penalties"],
+                metadata={
+                    **blended.metadata,
+                    "knockout_home_shootout_probability": home_prob_win,
+                },
+            )
+
         ev_table = candidate_score_ev_table(
-            blended, ScoringConfig(), StrategyConfig(), chaos, disagreement
+            blended, self.scoring_config, StrategyConfig(), chaos, disagreement
         )
+
         recs = {
             "safest": _top_score(ev_table, "exact_score_probability"),
             "highest_raw_ev": _top_score(ev_table, "expected_points"),
