@@ -94,6 +94,9 @@ class PaulOctopusOracle:
     ) -> np.ndarray:
         """Build a concentrated score matrix tilted toward the chosen side."""
 
+        if self.max_goals == 0:
+            return np.array([[1.0]])
+
         if chose_home:
             boosted_home = home_xg * 1.18
             dampened_away = away_xg * 0.82
@@ -116,6 +119,9 @@ class PaulOctopusOracle:
         rng: np.random.Generator,
     ) -> np.ndarray:
         """Build a diffuse matrix representing Paul's rare wrong predictions."""
+
+        if self.max_goals == 0:
+            return np.array([[1.0]])
 
         # Flip the boost: Paul picked the wrong box.
         if chose_home:

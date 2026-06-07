@@ -35,3 +35,10 @@ def test_octopus_model_name_is_paul():
 def test_octopus_matrix_sums_to_one():
     signal = PaulOctopusOracle(seed=2026).predict_match("Neutral A", "Neutral B")
     assert signal.score_matrix.sum() == pytest.approx(1.0)
+
+
+def test_octopus_handles_max_goals_zero():
+    oracle = PaulOctopusOracle(seed=2026, max_goals=0)
+    signal = oracle.predict_match("Neutral A", "Neutral B")
+    assert signal.score_matrix.shape == (1, 1)
+    assert signal.score_matrix[0, 0] == pytest.approx(1.0)

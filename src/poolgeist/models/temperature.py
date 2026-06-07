@@ -6,7 +6,6 @@ import numpy as np
 
 from poolgeist.models.base import (
     adjust_xg_with_modifiers,
-    independent_poisson_matrix,
     matchup_modifiers,
     matrix_to_signal,
 )
@@ -55,40 +54,55 @@ class TemperatureChaosModel:
         idiosyncratic_sigma = np.sqrt(max(sigma**2 - common_sigma**2, 0.0))
         nodes, weights = np.polynomial.hermite.hermgauss(self.quadrature_points)
         normal_weights = weights / np.sqrt(np.pi)
-        matrix = np.zeros((self.max_goals + 1, self.max_goals + 1), dtype=float)
 
-        for common_node, common_weight in zip(nodes, normal_weights, strict=True):
-            for home_node, home_weight in zip(nodes, normal_weights, strict=True):
-                for away_node, away_weight in zip(nodes, normal_weights, strict=True):
-                    common_shock = np.sqrt(2.0) * common_node
-                    home_shock = np.sqrt(2.0) * home_node
-                    away_shock = np.sqrt(2.0) * away_node
-                    home_rate = (
-                        home_xg
-                        * pace
-                        * np.exp(
-                            common_sigma * common_shock
-                            + idiosyncratic_sigma * home_shock
-                            - 0.5 * sigma**2
-                        )
-                    )
-                    away_rate = (
-                        away_xg
-                        * pace
-                        * np.exp(
-                            common_sigma * common_shock
-                            + idiosyncratic_sigma * away_shock
-                            - 0.5 * sigma**2
-                        )
-                    )
-                    matrix += (
-                        common_weight
-                        * home_weight
-                        * away_weight
-                        * independent_poisson_matrix(home_rate, away_rate, self.max_goals)
-                    )
+        shocks = np.sqrt(2.0) * nodes
+        common_grid = shocks[:, np.newaxis, np.newaxis]
+        home_grid = shocks[np.newaxis, :, np.newaxis]
+        away_grid = shocks[np.newaxis, np.newaxis, :]
+
+        home_rates = (
+            home_xg
+            * pace
+            * np.exp(common_sigma * common_grid + idiosyncratic_sigma * home_grid - 0.5 * sigma**2)
+        )
+        away_rates = (
+            away_xg
+            * pace
+            * np.exp(common_sigma * common_grid + idiosyncratic_sigma * away_grid - 0.5 * sigma**2)
+        )
 
         goals = np.arange(self.max_goals + 1)
+        from scipy.stats import poisson
+
+        # home_probs/away_probs shape: (max_goals+1, Q, Q, Q)
+        home_probs = poisson.pmf(
+            goals[:, np.newaxis, np.newaxis, np.newaxis], home_rates[np.newaxis, ...]
+        )
+        away_probs = poisson.pmf(
+            goals[:, np.newaxis, np.newaxis, np.newaxis], away_rates[np.newaxis, ...]
+        )
+
+        if self.max_goals > 0:
+            home_probs[-1, ...] = poisson.sf(self.max_goals - 1, home_rates)
+            away_probs[-1, ...] = poisson.sf(self.max_goals - 1, away_rates)
+
+        # Ensure normalization across the goal axis
+        home_probs /= home_probs.sum(axis=0, keepdims=True)
+        away_probs /= away_probs.sum(axis=0, keepdims=True)
+
+        # outer_probs shape: (goals, goals, Q, Q, Q)
+        outer_probs = home_probs[:, np.newaxis, :, :, :] * away_probs[np.newaxis, :, :, :, :]
+
+        # weight_grid shape: (Q, Q, Q)
+        weight_grid = (
+            normal_weights[:, np.newaxis, np.newaxis]
+            * normal_weights[np.newaxis, :, np.newaxis]
+            * normal_weights[np.newaxis, np.newaxis, :]
+        )
+
+        # Sum over the three quadrature axes
+        matrix = np.sum(outer_probs * weight_grid[np.newaxis, np.newaxis, :, :, :], axis=(2, 3, 4))
+
         total = goals[:, None] + goals[None, :]
         late_fatigue_tail = 1.0 + 0.04 * stress * np.clip(total - 3, 0, None)
         return matrix * late_fatigue_tail
