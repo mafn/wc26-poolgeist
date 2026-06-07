@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -34,13 +35,13 @@ def load_team_cards(repo_root: str | Path = ".") -> list[TeamCard]:
     path = Path(repo_root) / "data" / "templates" / "team_cards_template.csv"
     df = read_csv(path)
     cards = []
+
+    def parse_list(val: Any) -> list[str]:
+        if pd.isna(val) or not val:
+            return []
+        return [x.strip() for x in str(val).split(",") if x.strip()]
+
     for _, row in df.iterrows():
-
-        def parse_list(val: Any) -> list[str]:
-            if pd.isna(val) or not val:
-                return []
-            return [x.strip() for x in str(val).split(",") if x.strip()]
-
         card = TeamCard(
             team=str(row["team"]),
             group=str(row.get("group", "")),
@@ -75,6 +76,7 @@ def load_team_cards(repo_root: str | Path = ".") -> list[TeamCard]:
     return cards
 
 
+@lru_cache(maxsize=4)
 def load_team_modifiers(repo_root: str | Path = ".") -> dict[str, dict[str, Any]]:
     """Load team cards and compute explainable modifiers for each team."""
     from poolgeist.team_cards import explainable_modifiers

@@ -106,6 +106,8 @@ def simulate_world_cup_2026(
         idx: int, current_assignment: list[str], used_indices: set[int], cost: int
     ) -> None:
         nonlocal best_assignment, min_cost
+        if cost >= min_cost:
+            return
         if idx == 8:
             if cost < min_cost:
                 min_cost = cost

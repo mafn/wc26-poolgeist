@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import poisson
 
-from poolgeist.models.base import matrix_to_signal
+from poolgeist.models.base import adjust_xg_with_modifiers, matrix_to_signal
 from poolgeist.schemas import ModelSignal
 
 
@@ -34,18 +34,13 @@ class PoissonGoalsModel:
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
         """Predict a match by integrating a truncated Poisson score grid."""
 
-        home_xg = self.home_xg
-        away_xg = self.away_xg
-        if getattr(self, "team_modifiers", None):
-            home_mods = self.team_modifiers.get(home_team, {})
-            away_mods = self.team_modifiers.get(away_team, {})
-            home_attack = home_mods.get("attack_modifier", 0.0)
-            away_defense = away_mods.get("defense_modifier", 0.0)
-            home_xg = max(0.01, home_xg + home_attack + away_defense)
-
-            away_attack = away_mods.get("attack_modifier", 0.0)
-            home_defense = home_mods.get("defense_modifier", 0.0)
-            away_xg = max(0.01, away_xg + away_attack + home_defense)
+        home_xg, away_xg = adjust_xg_with_modifiers(
+            home_team,
+            away_team,
+            self.home_xg,
+            self.away_xg,
+            getattr(self, "team_modifiers", None),
+        )
 
         return matrix_to_signal(
             self.score_matrix(home_xg, away_xg),
