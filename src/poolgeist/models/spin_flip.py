@@ -52,17 +52,27 @@ class SpinFlipVolatilityModel:
             raise ValueError("spin-flip features must be between 0 and 1")
         self.max_goals = max_goals
 
-    def estimate(self) -> SpinFlipOutput:
+    def estimate(self, features: list[float] | None = None) -> SpinFlipOutput:
         """Estimate flip, upset, volatility, and late-goal modifiers."""
 
-        score = float(np.mean(self.features))
+        feats = features if features is not None else self.features
+        score = float(np.mean(feats))
         flip = float(np.clip(0.08 + 0.55 * score, 0.02, 0.70))
         return SpinFlipOutput(flip, 1.0 + flip, 0.5 * flip, 0.35 * flip)
 
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
         """Return a valid high-uncertainty score signal."""
 
-        out = self.estimate()
+        feats = list(self.features)
+        if getattr(self, "team_modifiers", None):
+            home_mods = self.team_modifiers.get(home_team, {})
+            away_mods = self.team_modifiers.get(away_team, {})
+            avg_chaos = 0.5 * (
+                home_mods.get("chaos_modifier", 0.0) + away_mods.get("chaos_modifier", 0.0)
+            )
+            feats[0] = float(np.clip(feats[0] + avg_chaos, 0.0, 1.0))
+
+        out = self.estimate(features=feats)
         goals = np.arange(self.max_goals + 1)
         matrix = np.exp(-0.45 * (goals[:, None] + goals[None, :]))
         high_total = goals[:, None] + goals[None, :] >= 3

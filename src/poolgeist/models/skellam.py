@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import poisson, skellam
 
-from poolgeist.models.base import matrix_to_signal
+from poolgeist.models.base import adjust_xg_with_modifiers, matrix_to_signal
 from poolgeist.schemas import ModelSignal
 
 
@@ -30,13 +30,21 @@ class SkellamGoalDifferenceModel:
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
         """Return a valid neutral score signal."""
 
+        home_xg, away_xg = adjust_xg_with_modifiers(
+            home_team,
+            away_team,
+            self.home_xg,
+            self.away_xg,
+            getattr(self, "team_modifiers", None),
+        )
+
         goals = np.arange(self.max_goals + 1)
-        home = poisson.pmf(goals, self.home_xg)
-        away = poisson.pmf(goals, self.away_xg)
+        home = poisson.pmf(goals, home_xg)
+        away = poisson.pmf(goals, away_xg)
         matrix = np.outer(home, away)
         diffs = goals[:, None] - goals[None, :]
         for diff in np.unique(diffs):
-            mass = float(max(skellam.pmf(int(diff), self.home_xg, self.away_xg), 1e-6))
+            mass = float(max(skellam.pmf(int(diff), home_xg, away_xg), 1e-6))
             matrix[diffs == diff] *= mass
         return matrix_to_signal(
             matrix,

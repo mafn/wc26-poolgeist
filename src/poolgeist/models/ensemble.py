@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, replace
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -137,10 +138,22 @@ class ModelCouncil:
         models: Sequence[MatchModel] | None = None,
         config: EnsembleConfig | None = None,
         scoring_config: ScoringConfig | None = None,
+        team_modifiers: dict[str, dict[str, Any]] | None = None,
     ):
         self.config = config or EnsembleConfig()
         self.scoring_config = scoring_config or ScoringConfig()
+        self.team_modifiers = team_modifiers or {}
         self.models = list(models) if models is not None else self._default_models()
+        for model in self.models:
+            self._inject_team_modifiers(model)
+
+    def _inject_team_modifiers(self, model: MatchModel) -> None:
+        """Attach modifiers to mutable model instances without violating custom model contracts."""
+
+        try:
+            model.team_modifiers = self.team_modifiers
+        except (AttributeError, TypeError, ValueError):
+            return
 
     def _default_models(self) -> list[MatchModel]:
         return [
