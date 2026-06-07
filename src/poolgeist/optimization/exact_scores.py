@@ -22,27 +22,80 @@ def candidate_scores(
 
     scores = {(home, away) for home in range(6) for away in range(6)}
     scores.update({(6, 0), (6, 1), (7, 0), (0, 6), (1, 6), (0, 7)})
-    # Add common high-scoring shootout outcomes (decided by penalties / sudden death)
-    scores.update({(6, 5), (5, 6), (7, 6), (6, 7), (8, 7), (7, 8)})
+    # Add common high-scoring shootout outcomes (penalties, sudden death, lopsided scores)
+
+    scores.update(
+        {
+            (6, 5),
+            (5, 6),
+            (7, 6),
+            (6, 7),
+            (8, 7),
+            (7, 8),
+            (6, 2),
+            (2, 6),
+            (6, 3),
+            (3, 6),
+            (6, 4),
+            (4, 6),
+            (7, 3),
+            (3, 7),
+            (7, 4),
+            (4, 7),
+            (7, 5),
+            (5, 7),
+            (8, 5),
+            (5, 8),
+            (8, 6),
+            (6, 8),
+        }
+    )
     if custom_candidates:
         scores.update(custom_candidates)
     return sorted(scores)
 
 
-@functools.lru_cache(maxsize=128)
-def _get_shootout_probs(home_prob_win: float) -> dict[tuple[int, int], float]:
-    """Pre-calculate shootout score probabilities (using seeded RNG for determinism)."""
+@functools.lru_cache(maxsize=1)
+def _get_static_shootout_probs() -> tuple[
+    dict[tuple[int, int], float], dict[tuple[int, int], float]
+]:
+    """Pre-calculate static shootout score distributions for home and away wins."""
     from poolgeist.simulation.penalties import simulate_shootout_match_score
 
     rng = np.random.default_rng(2026)
-    shootout_counts = Counter()
+    home_counts = Counter()
+    away_counts = Counter()
     n_sims = 5000
     for _ in range(n_sims):
-        winner_is_home = rng.random() < home_prob_win
-        score = simulate_shootout_match_score(winner_is_home, rng)
-        shootout_counts[score] += 1
+        home_counts[simulate_shootout_match_score(True, rng)] += 1
+        away_counts[simulate_shootout_match_score(False, rng)] += 1
 
-    return {score: count / n_sims for score, count in shootout_counts.items()}
+    home_probs = {score: count / n_sims for score, count in home_counts.items()}
+    away_probs = {score: count / n_sims for score, count in away_counts.items()}
+    return home_probs, away_probs
+
+
+def _get_shootout_probs(home_prob_win: float) -> dict[tuple[int, int], float]:
+    """Get shootout score probabilities by blending pre-calculated static distributions."""
+    home_probs, away_probs = _get_static_shootout_probs()
+    all_scores = set(home_probs.keys()) | set(away_probs.keys())
+    return {
+        score: home_prob_win * home_probs.get(score, 0.0)
+        + (1.0 - home_prob_win) * away_probs.get(score, 0.0)
+        for score in all_scores
+    }
+
+
+@functools.lru_cache(maxsize=1)
+def _get_et_matrix() -> np.ndarray:
+    """Pre-calculate the static extra-time goals distribution matrix."""
+    from poolgeist.models.poisson import PoissonGoalsModel
+
+    return (
+        PoissonGoalsModel(home_xg=0.35, away_xg=0.35, max_goals=3)
+        .predict_match("home", "away")
+        .score_matrix
+    )
 
 
 def adjust_matrix_for_knockout(
@@ -50,13 +103,7 @@ def adjust_matrix_for_knockout(
     home_prob_win: float = 0.5,
 ) -> np.ndarray:
     """Adjust a 90-minute score matrix for extra time and penalty shootouts."""
-    from poolgeist.models.poisson import PoissonGoalsModel
-
-    # Extra time goals distribution (reduced xG Poisson model)
-    et_signal = PoissonGoalsModel(home_xg=0.35, away_xg=0.35, max_goals=3).predict_match(
-        "home", "away"
-    )
-    et_matrix = et_signal.score_matrix
+    et_matrix = _get_et_matrix()
 
     shootout_probs = _get_shootout_probs(home_prob_win)
 

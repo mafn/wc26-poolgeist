@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,7 +25,7 @@ class SimulationConfig:
 
 
 try:
-    if "pytest" in sys.modules:
+    if os.getenv("POOLGEIST_TESTING") == "true":
         raise ImportError
     from poolgeist.config_local import ScoringConfig  # type: ignore
 except ImportError:
