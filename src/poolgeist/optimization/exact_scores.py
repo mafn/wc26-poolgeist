@@ -59,7 +59,12 @@ def candidate_scores(
 def _get_static_shootout_probs() -> tuple[
     dict[tuple[int, int], float], dict[tuple[int, int], float]
 ]:
-    """Pre-calculate static shootout score distributions for home and away wins."""
+    """Pre-calculate static shootout score distributions for home and away wins.
+
+    Note: each ``simulate_shootout_match_score`` call consumes a variable
+    number of RNG draws due to rejection sampling, so the generator state
+    after this function is not deterministic w.r.t. the number of *calls*.
+    """
     from poolgeist.simulation.penalties import simulate_shootout_match_score
 
     rng = np.random.default_rng(2026)
@@ -103,6 +108,8 @@ def adjust_matrix_for_knockout(
     home_prob_win: float = 0.5,
 ) -> np.ndarray:
     """Adjust a 90-minute score matrix for extra time and penalty shootouts."""
+    if score_matrix.shape[0] != score_matrix.shape[1]:
+        raise ValueError("score_matrix must be square")
     et_matrix = _get_et_matrix()
 
     shootout_probs = _get_shootout_probs(home_prob_win)

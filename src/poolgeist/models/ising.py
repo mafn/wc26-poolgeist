@@ -6,7 +6,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from poolgeist.models.base import matrix_to_signal
+from poolgeist.models.base import (
+    adjust_xg_with_modifiers,
+    independent_poisson_matrix,
+    matchup_modifiers,
+    matrix_to_signal,
+)
 from poolgeist.schemas import ModelSignal
 
 
@@ -41,12 +46,18 @@ class IsingPressureModel:
         temperature: float = 1.0,
         home_pressure: float | None = None,
         away_pressure: float | None = None,
+        home_xg: float = 1.35,
+        away_xg: float = 1.15,
         max_goals: int = 10,
     ):
         if temperature <= 0:
             raise ValueError("temperature must be positive")
+        if home_xg <= 0 or away_xg <= 0:
+            raise ValueError("Expected goals must be positive.")
         if home_pressure is not None or away_pressure is not None:
             strength_difference += (home_pressure or 0.0) - (away_pressure or 0.0)
+        self.home_xg = home_xg
+        self.away_xg = away_xg
         self.strength_difference = strength_difference
         self.group_incentive_pressure = group_incentive_pressure
         self.need_goal_difference = need_goal_difference
@@ -70,8 +81,17 @@ class IsingPressureModel:
             + 0.25 * self.must_win_state
             + 0.15 * self.fatigue_rest_asymmetry
             + 0.15 * self.home_host_pressure
-        ) / self.temperature
-        pressure = float(np.tanh(field))
+        )
+        coupling = float(np.clip(0.25 + 0.45 * self.match_importance, 0.05, 0.85))
+        beta = 1.0 / self.temperature
+        magnetization = 0.0
+        for _ in range(50):
+            next_magnetization = float(np.tanh(beta * (field + coupling * magnetization)))
+            if abs(next_magnetization - magnetization) < 1e-10:
+                magnetization = next_magnetization
+                break
+            magnetization = next_magnetization
+        pressure = magnetization
         chaos = float(
             np.clip(0.12 + 0.18 * self.match_importance + 0.12 * (self.temperature - 1), 0, 0.55)
         )
@@ -93,34 +113,42 @@ class IsingPressureModel:
             ],
         )
 
+    def score_matrix(self, home_xg: float, away_xg: float, out: IsingPressureOutput) -> np.ndarray:
+        """Convert mean-field pressure into a Boltzmann-weighted score matrix."""
+
+        pressure = out.pressure_modifier
+        risk = out.attacking_risk_modifier
+        home_rate = home_xg * np.exp(0.12 * pressure + 0.06 * risk)
+        away_rate = away_xg * np.exp(-0.12 * pressure + 0.06 * risk)
+        matrix = independent_poisson_matrix(home_rate, away_rate, self.max_goals)
+        goals = np.arange(self.max_goals + 1)
+        diff = goals[:, None] - goals[None, :]
+        total = goals[:, None] + goals[None, :]
+        draw_mask = diff == 0
+        beta = 1.0 / self.temperature
+        energy = beta * (0.28 * pressure * diff + 0.08 * risk * (total - (home_rate + away_rate)))
+        matrix = matrix * np.exp(np.clip(energy, -3.0, 3.0))
+        matrix[draw_mask] *= 1.0 + out.draw_modifier
+        return matrix
+
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
-        """Convert tendency pressure into a diffuse valid score matrix."""
+        """Convert tendency pressure into a calibrated score matrix."""
 
         strength_diff = self.strength_difference
+        team_modifiers = getattr(self, "team_modifiers", None)
+        home_xg, away_xg = adjust_xg_with_modifiers(
+            home_team,
+            away_team,
+            self.home_xg,
+            self.away_xg,
+            team_modifiers,
+        )
+        matchup = matchup_modifiers(home_team, away_team, team_modifiers)
         if getattr(self, "team_modifiers", None):
-            home_mods = self.team_modifiers.get(home_team, {})
-            away_mods = self.team_modifiers.get(away_team, {})
-            home_strength = home_mods.get("attack_modifier", 0.0) - home_mods.get(
-                "defense_modifier", 0.0
-            )
-            away_strength = away_mods.get("attack_modifier", 0.0) - away_mods.get(
-                "defense_modifier", 0.0
-            )
-            strength_diff += home_strength - away_strength
+            strength_diff += matchup["strength_gap"]
 
         out = self.pressure_output(strength_difference=strength_diff)
-        goals = np.arange(self.max_goals + 1)
-        base = np.exp(-0.55 * (goals[:, None] + goals[None, :]))
-        matrix = np.zeros_like(base, dtype=float)
-        matrix[goals[:, None] > goals[None, :]] = (
-            base[goals[:, None] > goals[None, :]] * out.adjusted_tendency_probs["home"]
-        )
-        matrix[goals[:, None] == goals[None, :]] = (
-            base[goals[:, None] == goals[None, :]] * out.adjusted_tendency_probs["draw"]
-        )
-        matrix[goals[:, None] < goals[None, :]] = (
-            base[goals[:, None] < goals[None, :]] * out.adjusted_tendency_probs["away"]
-        )
+        matrix = self.score_matrix(home_xg, away_xg, out)
         return matrix_to_signal(
             matrix,
             model_name="ising_pressure",
@@ -128,5 +156,10 @@ class IsingPressureModel:
             home_team=home_team,
             away_team=away_team,
             explanations=out.explanations,
-            metadata=out.__dict__,
+            metadata={
+                **out.__dict__,
+                "home_xg": home_xg,
+                "away_xg": away_xg,
+                "matchup_strength_gap": matchup["strength_gap"],
+            },
         )

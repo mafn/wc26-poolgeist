@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy.stats import poisson
 
-from poolgeist.models.base import adjust_xg_with_modifiers, matrix_to_signal
+from poolgeist.models.base import (
+    adjust_xg_with_modifiers,
+    independent_poisson_matrix,
+    matrix_to_signal,
+)
 from poolgeist.schemas import ModelSignal
 
 
 class PoissonGoalsModel:
-    """Baseline score model using configurable expected goals."""
+    """Calibrated independent Poisson score model."""
 
     default_weight = 0.32
 
@@ -24,12 +27,11 @@ class PoissonGoalsModel:
     def score_matrix(
         self, home_xg: float | None = None, away_xg: float | None = None
     ) -> np.ndarray:
-        """Return a normalized score probability matrix."""
+        """Return an exact finite score probability matrix."""
 
         h_xg = home_xg if home_xg is not None else self.home_xg
         a_xg = away_xg if away_xg is not None else self.away_xg
-        goals = np.arange(self.max_goals + 1)
-        return np.outer(poisson.pmf(goals, h_xg), poisson.pmf(goals, a_xg))
+        return independent_poisson_matrix(h_xg, a_xg, self.max_goals)
 
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
         """Predict a match by integrating a truncated Poisson score grid."""
@@ -48,6 +50,9 @@ class PoissonGoalsModel:
             model_weight=self.default_weight,
             home_team=home_team,
             away_team=away_team,
-            explanations=["Independent Poisson baseline with neutral configurable xG inputs."],
+            explanations=[
+                "Independent Poisson matrix calibrated from matchup modifiers with tail mass "
+                "folded into the final goal bucket."
+            ],
             metadata={"home_xg": home_xg, "away_xg": away_xg},
         )

@@ -70,4 +70,4 @@ def test_model_council_configured_weights_change_blend():
     ).predict_match("Neutral A", "Neutral B")
 
     assert not np.allclose(poisson_only.signal.score_matrix, octopus_only.signal.score_matrix)
-    assert octopus_only.signal.metadata["component_weights"] == {"random_octopus_oracle": 1.0}
+    assert octopus_only.signal.metadata["component_weights"] == {"paul_octopus_oracle": 1.0}

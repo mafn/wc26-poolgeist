@@ -49,7 +49,8 @@ def simulate_shootout_match_score(
 
     Uses rejection sampling to ensure the simulated score aligns with the predetermined winner.
     """
-    while True:
+    _max_rejection_iters = 1000
+    for _rejection_iter in range(_max_rejection_iters):
         home_kicks = []
         away_kicks = []
         # First 5 rounds
@@ -79,7 +80,8 @@ def simulate_shootout_match_score(
             home_score = sum(home_kicks)
             away_score = sum(away_kicks)
             if home_score == away_score:
-                while True:
+                _max_sudden_death = 100
+                for _sd_round in range(_max_sudden_death):
                     home_ok = generator.random() < 0.75
                     away_ok = generator.random() < 0.75
                     if home_ok:
@@ -88,10 +90,13 @@ def simulate_shootout_match_score(
                         away_score += 1
                     if home_ok != away_ok:
                         break
+                else:
+                    raise RuntimeError("Sudden-death shootout did not resolve")
 
         simulated_home_wins = home_score > away_score
         if simulated_home_wins == winner_is_home:
             return home_score, away_score
+    raise RuntimeError("Rejection sampling for shootout did not converge")
 
 
 def simulate_shootout(

@@ -66,7 +66,7 @@ MODEL_NAME_TO_WEIGHT_KEY = {
     "temperature_chaos": "temperature",
     "ising_pressure": "ising",
     "spin_flip": "spin_flip",
-    "random_octopus_oracle": "octopus",
+    "paul_octopus_oracle": "octopus",
 }
 
 
