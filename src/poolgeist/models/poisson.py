@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import poisson
 
-from poolgeist.models.base import matrix_to_signal
+from poolgeist.models.base import adjust_xg_with_modifiers, matrix_to_signal
 from poolgeist.schemas import ModelSignal
 
 
@@ -21,21 +21,33 @@ class PoissonGoalsModel:
         self.away_xg = away_xg
         self.max_goals = max_goals
 
-    def score_matrix(self) -> np.ndarray:
+    def score_matrix(
+        self, home_xg: float | None = None, away_xg: float | None = None
+    ) -> np.ndarray:
         """Return a normalized score probability matrix."""
 
+        h_xg = home_xg if home_xg is not None else self.home_xg
+        a_xg = away_xg if away_xg is not None else self.away_xg
         goals = np.arange(self.max_goals + 1)
-        return np.outer(poisson.pmf(goals, self.home_xg), poisson.pmf(goals, self.away_xg))
+        return np.outer(poisson.pmf(goals, h_xg), poisson.pmf(goals, a_xg))
 
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
         """Predict a match by integrating a truncated Poisson score grid."""
 
+        home_xg, away_xg = adjust_xg_with_modifiers(
+            home_team,
+            away_team,
+            self.home_xg,
+            self.away_xg,
+            getattr(self, "team_modifiers", None),
+        )
+
         return matrix_to_signal(
-            self.score_matrix(),
+            self.score_matrix(home_xg, away_xg),
             model_name="independent_poisson",
             model_weight=self.default_weight,
             home_team=home_team,
             away_team=away_team,
             explanations=["Independent Poisson baseline with neutral configurable xG inputs."],
-            metadata={"home_xg": self.home_xg, "away_xg": self.away_xg},
+            metadata={"home_xg": home_xg, "away_xg": away_xg},
         )
