@@ -21,6 +21,18 @@ class KnockoutResult(MatchResult):
     decided_by: str = "normal_time"
     extra_time_home_goals: int = 0
     extra_time_away_goals: int = 0
+    penalties_home_goals: int = 0
+    penalties_away_goals: int = 0
+
+    @property
+    def final_home_goals(self) -> int:
+        """Total goals including extra time and penalties."""
+        return self.home_goals + self.extra_time_home_goals + self.penalties_home_goals
+
+    @property
+    def final_away_goals(self) -> int:
+        """Total goals including extra time and penalties."""
+        return self.away_goals + self.extra_time_away_goals + self.penalties_away_goals
 
 
 def choose_winner(
@@ -83,7 +95,7 @@ def simulate_knockout_match(
             et_home,
             et_away,
         )
-    advanced = simulate_shootout(
+    advanced, (pen_home, pen_away) = simulate_shootout(
         home_team, away_team, gen, home_probability=shootout_win_probability()
     )
     return KnockoutResult(
@@ -96,4 +108,6 @@ def simulate_knockout_match(
         "penalties",
         et_home,
         et_away,
+        pen_home,
+        pen_away,
     )

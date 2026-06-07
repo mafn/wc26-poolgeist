@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,17 +25,23 @@ class SimulationConfig:
     include_third_place_match: bool = False
 
 
-@dataclass(frozen=True)
-class ScoringConfig:
-    """Kicktipp-style 9er-compatible office-pool scoring configuration."""
+try:
+    if "pytest" in sys.modules:
+        raise ImportError
+    from poolgeist.config_local import ScoringConfig  # type: ignore
+except ImportError:
 
-    exact_score: int = 4
-    exact_winning_score: int = 4
-    exact_draw_score: int = 4
-    correct_goal_difference: int = 3
-    correct_draw_tendency: int = 3
-    correct_winner_only: int = 2
-    wrong_tendency: int = 0
+    @dataclass(frozen=True)
+    class ScoringConfig:
+        """Kicktipp-style 9er-compatible office-pool scoring configuration."""
+
+        exact_score: int = 4
+        exact_winning_score: int = 4
+        exact_draw_score: int = 4
+        correct_goal_difference: int = 3
+        correct_draw_tendency: int = 3
+        correct_winner_only: int = 2
+        wrong_tendency: int = 0
 
 
 @dataclass(frozen=True)

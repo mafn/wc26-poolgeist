@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import functools
+from collections import Counter
 from collections.abc import Iterable
 
+import numpy as np
 import pandas as pd
 
 from poolgeist.config import ScoringConfig, StrategyConfig
@@ -19,9 +22,86 @@ def candidate_scores(
 
     scores = {(home, away) for home in range(6) for away in range(6)}
     scores.update({(6, 0), (6, 1), (7, 0), (0, 6), (1, 6), (0, 7)})
+    # Add common high-scoring shootout outcomes (decided by penalties / sudden death)
+    scores.update({(6, 5), (5, 6), (7, 6), (6, 7), (8, 7), (7, 8)})
     if custom_candidates:
         scores.update(custom_candidates)
     return sorted(scores)
+
+
+@functools.lru_cache(maxsize=128)
+def _get_shootout_probs(home_prob_win: float) -> dict[tuple[int, int], float]:
+    """Pre-calculate shootout score probabilities (using seeded RNG for determinism)."""
+    from poolgeist.simulation.penalties import simulate_shootout_match_score
+
+    rng = np.random.default_rng(2026)
+    shootout_counts = Counter()
+    n_sims = 5000
+    for _ in range(n_sims):
+        winner_is_home = rng.random() < home_prob_win
+        score = simulate_shootout_match_score(winner_is_home, rng)
+        shootout_counts[score] += 1
+
+    return {score: count / n_sims for score, count in shootout_counts.items()}
+
+
+def adjust_matrix_for_knockout(
+    score_matrix: np.ndarray,
+    home_prob_win: float = 0.5,
+) -> np.ndarray:
+    """Adjust a 90-minute score matrix for extra time and penalty shootouts."""
+    from poolgeist.models.poisson import PoissonGoalsModel
+
+    # Extra time goals distribution (reduced xG Poisson model)
+    et_signal = PoissonGoalsModel(home_xg=0.35, away_xg=0.35, max_goals=3).predict_match(
+        "home", "away"
+    )
+    et_matrix = et_signal.score_matrix
+
+    shootout_probs = _get_shootout_probs(home_prob_win)
+
+    # New score matrix size: maximum possible goals is 90min max + ET max + shootout max
+    max_90_goals = score_matrix.shape[0] - 1
+    max_et_goals = et_matrix.shape[0] - 1
+    max_shootout_goals = max(max(h, a) for h, a in shootout_probs)
+    max_final_goals = max_90_goals + max_et_goals + max_shootout_goals
+
+    ko_matrix = np.zeros((max_final_goals + 1, max_final_goals + 1), dtype=float)
+
+    for h in range(score_matrix.shape[0]):
+        for a in range(score_matrix.shape[1]):
+            p_90 = score_matrix[h, a]
+            if p_90 == 0:
+                continue
+
+            if h != a:
+                # Decided in normal time
+                ko_matrix[h, a] += p_90
+            else:
+                # Tied, goes to extra time
+                for eth in range(et_matrix.shape[0]):
+                    for eta in range(et_matrix.shape[1]):
+                        p_et = et_matrix[eth, eta]
+                        p_total = p_90 * p_et
+                        if p_total == 0:
+                            continue
+
+                        if eth != eta:
+                            # Decided in extra time
+                            ko_matrix[h + eth, a + eta] += p_total
+                        else:
+                            # Still tied, goes to penalties
+                            base_h = h + eth
+                            base_a = a + eta
+                            for (pen_h, pen_a), p_pen in shootout_probs.items():
+                                ko_matrix[base_h + pen_h, base_a + pen_a] += p_total * p_pen
+
+    # Normalize
+    total = ko_matrix.sum()
+    if total > 0:
+        ko_matrix /= total
+
+    return ko_matrix
 
 
 def expected_points_for_score(

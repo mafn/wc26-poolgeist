@@ -154,7 +154,9 @@ class ModelCouncil:
             RandomOctopusOracle(seed=2026),
         ]
 
-    def predict_match(self, home_team: str, away_team: str) -> EnsemblePrediction:
+    def predict_match(
+        self, home_team: str, away_team: str, is_knockout: bool = False
+    ) -> EnsemblePrediction:
         """Predict a match and produce safe/EV/strategic/chaos recommendation classes."""
 
         signals: list[ModelSignal] = []
@@ -176,9 +178,30 @@ class ModelCouncil:
             )
         )
         chaos = chaos_index(blended, model_disagreement=disagreement)
+        if is_knockout:
+            from poolgeist.optimization.exact_scores import adjust_matrix_for_knockout
+            from poolgeist.simulation.penalties import shootout_win_probability
+
+            # Adjust the blended score matrix for extra time and shootout outcomes
+            home_prob_win = shootout_win_probability()
+            ko_matrix = adjust_matrix_for_knockout(blended.score_matrix, home_prob_win)
+
+            # Rebuild the blended ModelSignal with the knockout-adjusted matrix
+            blended = matrix_to_signal(
+                ko_matrix,
+                model_name=blended.model_name,
+                model_weight=blended.model_weight,
+                home_team=blended.home_team,
+                away_team=blended.away_team,
+                explanations=blended.explanations,
+                warnings=blended.warnings + ["Adjusted for knockout/penalties"],
+                metadata=blended.metadata,
+            )
+
         ev_table = candidate_score_ev_table(
             blended, ScoringConfig(), StrategyConfig(), chaos, disagreement
         )
+
         recs = {
             "safest": _top_score(ev_table, "exact_score_probability"),
             "highest_raw_ev": _top_score(ev_table, "expected_points"),
