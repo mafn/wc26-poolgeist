@@ -10,7 +10,10 @@ from poolgeist.models.base import MatchModel
 from poolgeist.models.poisson import PoissonGoalsModel
 from poolgeist.schemas import ModelSignal
 from poolgeist.simulation.match import MatchResult, simulate_score
-from poolgeist.simulation.penalties import shootout_win_probability, simulate_shootout
+from poolgeist.simulation.penalties import (
+    shootout_win_probability_from_tendency,
+    simulate_shootout,
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,18 @@ class KnockoutResult(MatchResult):
     decided_by: str = "normal_time"
     extra_time_home_goals: int = 0
     extra_time_away_goals: int = 0
+    penalties_home_goals: int = 0
+    penalties_away_goals: int = 0
+
+    @property
+    def final_home_goals(self) -> int:
+        """Total goals including extra time and penalties."""
+        return self.home_goals + self.extra_time_home_goals + self.penalties_home_goals
+
+    @property
+    def final_away_goals(self) -> int:
+        """Total goals including extra time and penalties."""
+        return self.away_goals + self.extra_time_away_goals + self.penalties_away_goals
 
 
 def choose_winner(
@@ -83,8 +98,10 @@ def simulate_knockout_match(
             et_home,
             et_away,
         )
-    advanced = simulate_shootout(
-        home_team, away_team, gen, home_probability=shootout_win_probability()
+    home_prob_win = shootout_win_probability_from_tendency(signal.tendency_probs)
+
+    advanced, (pen_home, pen_away) = simulate_shootout(
+        home_team, away_team, gen, home_probability=home_prob_win
     )
     return KnockoutResult(
         home_team,
@@ -96,4 +113,6 @@ def simulate_knockout_match(
         "penalties",
         et_home,
         et_away,
+        pen_home,
+        pen_away,
     )

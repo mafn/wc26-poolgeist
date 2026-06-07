@@ -34,3 +34,7 @@ outputs/*
 .DS_Store
 .vscode/
 .idea/
+
+# Local configuration
+src/poolgeist/config_local.py
+

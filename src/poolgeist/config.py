@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -134,6 +134,23 @@ def load_yaml_config(path: str | Path) -> dict[str, Any]:
 
     with Path(path).open(encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
+
+
+def _dataclass_kwargs(config_type: type[Any], values: dict[str, Any]) -> dict[str, Any]:
+    """Return keys accepted by a dataclass config type."""
+
+    allowed = {field.name for field in fields(config_type)}
+    return {key: value for key, value in values.items() if key in allowed}
+
+
+def load_scoring_config(path: str | Path) -> ScoringConfig:
+    """Load scoring config from a YAML file with either root or ``scoring`` keys."""
+
+    data = load_yaml_config(path)
+    scoring_data = data.get("scoring", data)
+    if not isinstance(scoring_data, dict):
+        raise ValueError("Scoring config must be a mapping.")
+    return ScoringConfig(**_dataclass_kwargs(ScoringConfig, scoring_data))
 
 
 def load_environment(dotenv_path: str | Path | None = None) -> None:
