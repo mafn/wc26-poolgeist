@@ -81,3 +81,29 @@ class MatchModel(Protocol):
 
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
         """Predict a single match."""
+
+
+def adjust_xg_with_modifiers(
+    home_team: str,
+    away_team: str,
+    base_home_xg: float,
+    base_away_xg: float,
+    team_modifiers: dict[str, dict[str, Any]] | None,
+) -> tuple[float, float]:
+    """Adjust expected goals dynamically using team modifiers."""
+
+    if not team_modifiers:
+        return base_home_xg, base_away_xg
+
+    home_mods = team_modifiers.get(home_team, {})
+    away_mods = team_modifiers.get(away_team, {})
+
+    home_attack = home_mods.get("attack_modifier", 0.0)
+    away_defense = away_mods.get("defense_modifier", 0.0)
+    adjusted_home_xg = max(0.01, base_home_xg + home_attack + away_defense)
+
+    away_attack = away_mods.get("attack_modifier", 0.0)
+    home_defense = home_mods.get("defense_modifier", 0.0)
+    adjusted_away_xg = max(0.01, base_away_xg + away_attack + home_defense)
+
+    return adjusted_home_xg, adjusted_away_xg

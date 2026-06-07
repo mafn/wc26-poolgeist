@@ -45,6 +45,9 @@ Repository = "https://example.com/poolgeist"
 [tool.hatch.build.targets.wheel]
 packages = ["src/poolgeist"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"data/templates/team_cards_template.csv" = "poolgeist/templates/team_cards_template.csv"
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
