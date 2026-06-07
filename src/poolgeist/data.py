@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from poolgeist.team_cards import TeamCard
+
+TEAM_CARDS_TEMPLATE = Path("data") / "templates" / "team_cards_template.csv"
+PACKAGED_TEAM_CARDS_TEMPLATE = ("templates", "team_cards_template.csv")
 
 
 def read_csv(path: str | Path) -> pd.DataFrame:
@@ -29,11 +33,11 @@ def load_demo_fixtures(repo_root: str | Path = ".") -> pd.DataFrame:
     return read_csv(Path(repo_root) / "examples" / "neutral_demo_fixtures.csv")
 
 
+@lru_cache(maxsize=4)
 def load_team_cards(repo_root: str | Path = ".") -> list[TeamCard]:
     """Load and parse TeamCard objects from the template CSV."""
 
-    path = Path(repo_root) / "data" / "templates" / "team_cards_template.csv"
-    df = read_csv(path)
+    df = _read_team_cards_template(repo_root)
     cards = []
 
     def parse_list(val: Any) -> list[str]:
@@ -74,6 +78,32 @@ def load_team_cards(repo_root: str | Path = ".") -> list[TeamCard]:
         )
         cards.append(card)
     return cards
+
+
+def _read_team_cards_template(repo_root: str | Path) -> pd.DataFrame:
+    """Read team-card template data from an installed package or source checkout."""
+
+    searched: list[str] = []
+    explicit_path = Path(repo_root) / TEAM_CARDS_TEMPLATE
+    searched.append(str(explicit_path))
+    if explicit_path.exists():
+        return read_csv(explicit_path)
+
+    checkout_path = Path(__file__).resolve().parents[2] / TEAM_CARDS_TEMPLATE
+    searched.append(str(checkout_path))
+    if checkout_path.exists():
+        return read_csv(checkout_path)
+
+    package_resource = resources.files("poolgeist").joinpath(*PACKAGED_TEAM_CARDS_TEMPLATE)
+    searched.append("poolgeist/" + "/".join(PACKAGED_TEAM_CARDS_TEMPLATE))
+    if package_resource.is_file():
+        with package_resource.open("rb") as file:
+            return pd.read_csv(file)
+
+    searched_locations = ", ".join(searched)
+    raise FileNotFoundError(
+        f"Could not find team cards template CSV; searched: {searched_locations}"
+    )
 
 
 @lru_cache(maxsize=4)

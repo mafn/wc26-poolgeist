@@ -11,6 +11,8 @@ import pandas as pd
 from poolgeist.models.base import MatchModel
 from poolgeist.simulation.knockout import simulate_knockout_match
 
+GROUP_NAMES = tuple("ABCDEFGHIJKL")
+
 
 def simulate_world_cup_2026(
     teams: Sequence[str],
@@ -18,8 +20,13 @@ def simulate_world_cup_2026(
     *,
     ratings: dict[str, float] | None = None,
     generator: np.random.Generator | None = None,
+    team_to_group: dict[str, str] | None = None,
 ) -> str:
-    """Simulate a full 48-team 2026 World Cup tournament and return the champion."""
+    """Simulate a full 48-team tournament and return the champion.
+
+    Teams are grouped sequentially by default. Pass ``team_to_group`` to use an explicit
+    A-L assignment; explicit assignments must cover all teams with exactly four teams per group.
+    """
 
     if len(teams) != 48:
         raise ValueError("Exactly 48 teams are required for the 2026 World Cup simulation.")
@@ -27,29 +34,12 @@ def simulate_world_cup_2026(
     gen = generator or np.random.default_rng()
 
     # 1. Group assignment
-    try:
-        from poolgeist.data import load_team_cards
-
-        cards = load_team_cards()
-        team_to_group = {card.team: card.group for card in cards if card.group}
-    except Exception:
-        team_to_group = {}
-
-    group_names = list("ABCDEFGHIJKL")
-    groups = {g: [] for g in group_names}
-
-    # Try official grouping
-    for team in teams:
-        g = team_to_group.get(team)
-        if g in groups:
-            groups[g].append(team)
-
-    # Check if we have exactly 4 teams in each group. If not, fallback to sequential
-    if any(len(teams_in_group) != 4 for teams_in_group in groups.values()):
-        groups = {g: [] for g in group_names}
-        for i, team in enumerate(teams):
-            g = group_names[min(i // 4, 11)]
-            groups[g].append(team)
+    group_names = list(GROUP_NAMES)
+    groups = (
+        _groups_from_assignment(teams, team_to_group)
+        if team_to_group is not None
+        else _sequential_groups(teams)
+    )
 
     # 2. Simulate Group Stage
     from poolgeist.schemas import Fixture
@@ -222,16 +212,11 @@ def simulate_simple_knockout(
         raise ValueError("At least one team is required to simulate a knockout bracket.")
 
     if len(teams) == 48:
-        ratings = None
-        try:
-            from poolgeist.data import load_team_cards
-
-            cards = load_team_cards()
-            ratings = {card.team: card.base_rating for card in cards}
-        except Exception:
-            pass
+        ratings, team_to_group = _team_card_context_for(teams)
         generator = np.random.default_rng(seed)
-        winner = simulate_world_cup_2026(teams, model, ratings=ratings, generator=generator)
+        winner = simulate_world_cup_2026(
+            teams, model, ratings=ratings, generator=generator, team_to_group=team_to_group
+        )
         return pd.DataFrame([{"team": winner, "champion_count": 1}])
 
     generator = np.random.default_rng(seed)
@@ -257,18 +242,13 @@ def monte_carlo_champions(
     """Run repeated simple brackets/tournaments and return champion probabilities."""
 
     if len(teams) == 48:
-        ratings = None
-        try:
-            from poolgeist.data import load_team_cards
-
-            cards = load_team_cards()
-            ratings = {card.team: card.base_rating for card in cards}
-        except Exception:
-            pass
+        ratings, team_to_group = _team_card_context_for(teams)
         counts: Counter[str] = Counter()
         rng = np.random.default_rng(seed)
         for _ in range(n_simulations):
-            winner = simulate_world_cup_2026(teams, model, ratings=ratings, generator=rng)
+            winner = simulate_world_cup_2026(
+                teams, model, ratings=ratings, generator=rng, team_to_group=team_to_group
+            )
             counts[str(winner)] += 1
         return pd.DataFrame(
             [
@@ -292,3 +272,56 @@ def monte_carlo_champions(
             for team, count in counts.items()
         ]
     ).sort_values("champion_probability", ascending=False)
+
+
+def _sequential_groups(teams: Sequence[str]) -> dict[str, list[str]]:
+    groups = {g: [] for g in GROUP_NAMES}
+    for index, team in enumerate(teams):
+        groups[GROUP_NAMES[min(index // 4, len(GROUP_NAMES) - 1)]].append(team)
+    return groups
+
+
+def _groups_from_assignment(
+    teams: Sequence[str], team_to_group: dict[str, str]
+) -> dict[str, list[str]]:
+    groups = {g: [] for g in GROUP_NAMES}
+    missing_or_invalid = []
+    for team in teams:
+        group = team_to_group.get(team)
+        if group not in groups:
+            missing_or_invalid.append(team)
+            continue
+        groups[group].append(team)
+
+    invalid_group_sizes = {group: len(group_teams) for group, group_teams in groups.items()}
+    invalid_group_sizes = {group: size for group, size in invalid_group_sizes.items() if size != 4}
+    if missing_or_invalid or invalid_group_sizes:
+        raise ValueError(
+            "team_to_group must assign every team to groups A-L with exactly four teams per group."
+        )
+    return groups
+
+
+def _team_card_context_for(
+    teams: Sequence[str],
+) -> tuple[dict[str, float] | None, dict[str, str] | None]:
+    """Load card ratings/grouping once when template data completely covers the teams."""
+
+    try:
+        from poolgeist.data import load_team_cards
+
+        cards = load_team_cards()
+    except FileNotFoundError:
+        return None, None
+
+    cards_by_team = {card.team: card for card in cards}
+    if any(team not in cards_by_team for team in teams):
+        return None, None
+
+    ratings = {team: cards_by_team[team].base_rating for team in teams}
+    team_to_group = {team: cards_by_team[team].group for team in teams if cards_by_team[team].group}
+    if not team_to_group:
+        return ratings, None
+
+    _groups_from_assignment(teams, team_to_group)
+    return ratings, team_to_group
