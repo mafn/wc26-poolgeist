@@ -58,11 +58,12 @@ class IsingPressureModel:
         self.temperature = temperature
         self.max_goals = max_goals
 
-    def pressure_output(self) -> IsingPressureOutput:
+    def pressure_output(self, strength_difference: float | None = None) -> IsingPressureOutput:
         """Return Ising-inspired tendency probabilities and modifiers."""
 
+        sd = strength_difference if strength_difference is not None else self.strength_difference
         field = (
-            self.strength_difference
+            sd
             + 0.25 * self.group_incentive_pressure
             + 0.20 * self.need_goal_difference
             - 0.20 * self.already_qualified_rotation
@@ -95,7 +96,19 @@ class IsingPressureModel:
     def predict_match(self, home_team: str, away_team: str) -> ModelSignal:
         """Convert tendency pressure into a diffuse valid score matrix."""
 
-        out = self.pressure_output()
+        strength_diff = self.strength_difference
+        if getattr(self, "team_modifiers", None):
+            home_mods = self.team_modifiers.get(home_team, {})
+            away_mods = self.team_modifiers.get(away_team, {})
+            home_strength = home_mods.get("attack_modifier", 0.0) - home_mods.get(
+                "defense_modifier", 0.0
+            )
+            away_strength = away_mods.get("attack_modifier", 0.0) - away_mods.get(
+                "defense_modifier", 0.0
+            )
+            strength_diff += home_strength - away_strength
+
+        out = self.pressure_output(strength_difference=strength_diff)
         goals = np.arange(self.max_goals + 1)
         base = np.exp(-0.55 * (goals[:, None] + goals[None, :]))
         matrix = np.zeros_like(base, dtype=float)

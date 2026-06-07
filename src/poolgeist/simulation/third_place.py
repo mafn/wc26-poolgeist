@@ -21,13 +21,15 @@ def best_third_placed(
     frame = pd.DataFrame(thirds)
     if frame.empty:
         return frame
+    sort_cols = ["points", "goal_difference", "goals_for"]
+    ascending = [False, False, False]
+    if "rating_tiebreaker" in frame.columns:
+        sort_cols.append("rating_tiebreaker")
+        ascending.append(False)
+    sort_cols.append("team")
+    ascending.append(True)
     return (
-        frame.sort_values(
-            ["points", "goal_difference", "goals_for", "team"],
-            ascending=[False, False, False, True],
-        )
-        .head(n_qualifiers)
-        .reset_index(drop=True)
+        frame.sort_values(sort_cols, ascending=ascending).head(n_qualifiers).reset_index(drop=True)
     )
 
 
