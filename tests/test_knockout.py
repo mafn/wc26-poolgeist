@@ -2,7 +2,10 @@ import numpy as np
 
 from poolgeist.models.poisson import PoissonGoalsModel
 from poolgeist.simulation.knockout import simulate_knockout_match
-from poolgeist.simulation.penalties import shootout_win_probability
+from poolgeist.simulation.penalties import (
+    shootout_win_probability,
+    shootout_win_probability_from_tendency,
+)
 
 
 def test_knockout_flow_decides_advancement():
@@ -18,6 +21,12 @@ def test_knockout_flow_decides_advancement():
 
 def test_penalty_probability_clamped():
     assert 0.38 <= shootout_win_probability(manual_modifier=99) <= 0.62
+
+
+def test_penalty_probability_uses_tendency_strength():
+    assert shootout_win_probability_from_tendency({"home": 0.4, "draw": 0.2, "away": 0.4}) == 0.5
+    assert shootout_win_probability_from_tendency({"home": 0.7, "draw": 0.1, "away": 0.2}) > 0.5
+    assert shootout_win_probability_from_tendency({"home": 0.2, "draw": 0.1, "away": 0.7}) < 0.5
 
 
 def test_knockout_penalties_exact_scores():
@@ -67,3 +76,13 @@ def test_knockout_ev_matrix_optimization():
     for rec_score in prediction.recommendation_classes.values():
         home_t, away_t = map(int, rec_score.split("-"))
         assert home_t != away_t
+
+
+def test_knockout_ev_uses_blended_strength_for_shootout_probability():
+    from poolgeist.models.ensemble import ModelCouncil
+
+    prediction = ModelCouncil(models=[PoissonGoalsModel(home_xg=2.4, away_xg=0.4)]).predict_match(
+        "Neutral A", "Neutral B", is_knockout=True
+    )
+
+    assert prediction.signal.metadata["knockout_home_shootout_probability"] > 0.5

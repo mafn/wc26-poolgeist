@@ -10,7 +10,10 @@ from poolgeist.models.base import MatchModel
 from poolgeist.models.poisson import PoissonGoalsModel
 from poolgeist.schemas import ModelSignal
 from poolgeist.simulation.match import MatchResult, simulate_score
-from poolgeist.simulation.penalties import shootout_win_probability, simulate_shootout
+from poolgeist.simulation.penalties import (
+    shootout_win_probability_from_tendency,
+    simulate_shootout,
+)
 
 
 @dataclass(frozen=True)
@@ -95,8 +98,10 @@ def simulate_knockout_match(
             et_home,
             et_away,
         )
+    home_prob_win = shootout_win_probability_from_tendency(signal.tendency_probs)
+
     advanced, (pen_home, pen_away) = simulate_shootout(
-        home_team, away_team, gen, home_probability=shootout_win_probability()
+        home_team, away_team, gen, home_probability=home_prob_win
     )
     return KnockoutResult(
         home_team,

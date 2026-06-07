@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -24,23 +24,17 @@ class SimulationConfig:
     include_third_place_match: bool = False
 
 
-try:
-    if os.getenv("POOLGEIST_TESTING") == "true":
-        raise ImportError
-    from poolgeist.config_local import ScoringConfig  # type: ignore
-except ImportError:
+@dataclass(frozen=True)
+class ScoringConfig:
+    """Kicktipp-style 9er-compatible office-pool scoring configuration."""
 
-    @dataclass(frozen=True)
-    class ScoringConfig:
-        """Kicktipp-style 9er-compatible office-pool scoring configuration."""
-
-        exact_score: int = 4
-        exact_winning_score: int = 4
-        exact_draw_score: int = 4
-        correct_goal_difference: int = 3
-        correct_draw_tendency: int = 3
-        correct_winner_only: int = 2
-        wrong_tendency: int = 0
+    exact_score: int = 4
+    exact_winning_score: int = 4
+    exact_draw_score: int = 4
+    correct_goal_difference: int = 3
+    correct_draw_tendency: int = 3
+    correct_winner_only: int = 2
+    wrong_tendency: int = 0
 
 
 @dataclass(frozen=True)
@@ -140,6 +134,23 @@ def load_yaml_config(path: str | Path) -> dict[str, Any]:
 
     with Path(path).open(encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
+
+
+def _dataclass_kwargs(config_type: type[Any], values: dict[str, Any]) -> dict[str, Any]:
+    """Return keys accepted by a dataclass config type."""
+
+    allowed = {field.name for field in fields(config_type)}
+    return {key: value for key, value in values.items() if key in allowed}
+
+
+def load_scoring_config(path: str | Path) -> ScoringConfig:
+    """Load scoring config from a YAML file with either root or ``scoring`` keys."""
+
+    data = load_yaml_config(path)
+    scoring_data = data.get("scoring", data)
+    if not isinstance(scoring_data, dict):
+        raise ValueError("Scoring config must be a mapping.")
+    return ScoringConfig(**_dataclass_kwargs(ScoringConfig, scoring_data))
 
 
 def load_environment(dotenv_path: str | Path | None = None) -> None:

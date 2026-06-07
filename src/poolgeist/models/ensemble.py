@@ -133,9 +133,13 @@ class ModelCouncil:
     """Run all enabled model-council members and blend their score distributions."""
 
     def __init__(
-        self, models: Sequence[MatchModel] | None = None, config: EnsembleConfig | None = None
+        self,
+        models: Sequence[MatchModel] | None = None,
+        config: EnsembleConfig | None = None,
+        scoring_config: ScoringConfig | None = None,
     ):
         self.config = config or EnsembleConfig()
+        self.scoring_config = scoring_config or ScoringConfig()
         self.models = list(models) if models is not None else self._default_models()
 
     def _default_models(self) -> list[MatchModel]:
@@ -180,10 +184,10 @@ class ModelCouncil:
         chaos = chaos_index(blended, model_disagreement=disagreement)
         if is_knockout:
             from poolgeist.optimization.exact_scores import adjust_matrix_for_knockout
-            from poolgeist.simulation.penalties import shootout_win_probability
+            from poolgeist.simulation.penalties import shootout_win_probability_from_tendency
 
             # Adjust the blended score matrix for extra time and shootout outcomes
-            home_prob_win = shootout_win_probability()
+            home_prob_win = shootout_win_probability_from_tendency(blended.tendency_probs)
             ko_matrix = adjust_matrix_for_knockout(blended.score_matrix, home_prob_win)
 
             # Rebuild the blended ModelSignal with the knockout-adjusted matrix
@@ -195,11 +199,14 @@ class ModelCouncil:
                 away_team=blended.away_team,
                 explanations=blended.explanations,
                 warnings=blended.warnings + ["Adjusted for knockout/penalties"],
-                metadata=blended.metadata,
+                metadata={
+                    **blended.metadata,
+                    "knockout_home_shootout_probability": home_prob_win,
+                },
             )
 
         ev_table = candidate_score_ev_table(
-            blended, ScoringConfig(), StrategyConfig(), chaos, disagreement
+            blended, self.scoring_config, StrategyConfig(), chaos, disagreement
         )
 
         recs = {

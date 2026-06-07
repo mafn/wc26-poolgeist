@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import numpy as np
 
 
@@ -28,6 +30,16 @@ def shootout_win_probability(
     )
     lo, hi = (0.30, 0.70) if allow_strong_modifier else (0.38, 0.62)
     return float(np.clip(probability, lo, hi))
+
+
+def shootout_win_probability_from_tendency(tendency_probs: Mapping[str, float]) -> float:
+    """Estimate shootout win probability from non-draw match tendency strength."""
+
+    home_p = max(0.0, float(tendency_probs.get("home", 0.0)))
+    away_p = max(0.0, float(tendency_probs.get("away", 0.0)))
+    total_p = home_p + away_p
+    relative_strength = home_p / total_p if total_p > 0 else 0.5
+    return shootout_win_probability(manual_modifier=0.24 * (relative_strength - 0.5))
 
 
 def simulate_shootout_match_score(
