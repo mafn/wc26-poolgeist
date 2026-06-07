@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 import numpy as np
+from scipy.stats import poisson
 
 from poolgeist.schemas import ModelSignal
 from poolgeist.utils.probability import normalize
@@ -98,12 +99,114 @@ def adjust_xg_with_modifiers(
     home_mods = team_modifiers.get(home_team, {})
     away_mods = team_modifiers.get(away_team, {})
 
-    home_attack = home_mods.get("attack_modifier", 0.0)
-    away_defense = away_mods.get("defense_modifier", 0.0)
-    adjusted_home_xg = max(0.01, base_home_xg + home_attack + away_defense)
+    home_attack = _modifier(home_mods, "attack_modifier")
+    away_defense = _modifier(away_mods, "defense_modifier")
+    home_rating = _strength_modifier(home_mods)
+    away_rating = _strength_modifier(away_mods)
+    tempo = 0.5 * (_modifier(home_mods, "tempo_modifier") + _modifier(away_mods, "tempo_modifier"))
 
-    away_attack = away_mods.get("attack_modifier", 0.0)
-    home_defense = home_mods.get("defense_modifier", 0.0)
-    adjusted_away_xg = max(0.01, base_away_xg + away_attack + home_defense)
+    adjusted_home_xg = max(
+        0.01,
+        base_home_xg + home_attack + away_defense + 0.18 * (home_rating - away_rating) + tempo,
+    )
+
+    away_attack = _modifier(away_mods, "attack_modifier")
+    home_defense = _modifier(home_mods, "defense_modifier")
+    adjusted_away_xg = max(
+        0.01,
+        base_away_xg + away_attack + home_defense + 0.18 * (away_rating - home_rating) + tempo,
+    )
 
     return adjusted_home_xg, adjusted_away_xg
+
+
+def poisson_goal_probs(expected_goals: float, max_goals: int) -> np.ndarray:
+    """Return an exact finite Poisson grid with tail mass folded into the final bin."""
+
+    if expected_goals <= 0:
+        raise ValueError("expected_goals must be positive")
+    if max_goals < 0:
+        raise ValueError("max_goals must be non-negative")
+
+    goals = np.arange(max_goals + 1)
+    probabilities = poisson.pmf(goals, expected_goals)
+    if max_goals > 0:
+        probabilities[-1] = poisson.sf(max_goals - 1, expected_goals)
+    return probabilities / probabilities.sum()
+
+
+def independent_poisson_matrix(
+    home_xg: float,
+    away_xg: float,
+    max_goals: int,
+) -> np.ndarray:
+    """Return an exact independent score matrix for finite Monte Carlo grids."""
+
+    return np.outer(poisson_goal_probs(home_xg, max_goals), poisson_goal_probs(away_xg, max_goals))
+
+
+def matchup_modifiers(
+    home_team: str,
+    away_team: str,
+    team_modifiers: dict[str, dict[str, Any]] | None,
+) -> dict[str, float]:
+    """Extract bounded tactical modifiers used by chaos-side models."""
+
+    if not team_modifiers:
+        return {
+            "home_strength": 0.0,
+            "away_strength": 0.0,
+            "strength_gap": 0.0,
+            "tempo": 0.0,
+            "chaos": 0.0,
+            "home_chaos": 0.0,
+            "away_chaos": 0.0,
+        }
+
+    home_mods = team_modifiers.get(home_team, {})
+    away_mods = team_modifiers.get(away_team, {})
+    home_strength = (
+        _modifier(home_mods, "attack_modifier")
+        - _modifier(home_mods, "defense_modifier")
+        + _strength_modifier(home_mods)
+    )
+    away_strength = (
+        _modifier(away_mods, "attack_modifier")
+        - _modifier(away_mods, "defense_modifier")
+        + _strength_modifier(away_mods)
+    )
+    home_chaos = _modifier(home_mods, "chaos_modifier")
+    away_chaos = _modifier(away_mods, "chaos_modifier")
+    return {
+        "home_strength": float(home_strength),
+        "away_strength": float(away_strength),
+        "strength_gap": float(home_strength - away_strength),
+        "tempo": float(
+            0.5 * (_modifier(home_mods, "tempo_modifier") + _modifier(away_mods, "tempo_modifier"))
+        ),
+        "chaos": float(0.5 * (home_chaos + away_chaos)),
+        "home_chaos": float(home_chaos),
+        "away_chaos": float(away_chaos),
+    }
+
+
+def _modifier(modifiers: dict[str, Any], key: str) -> float:
+    value = modifiers.get(key, 0.0)
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _strength_modifier(modifiers: dict[str, Any]) -> float:
+    if "strength_modifier" in modifiers:
+        return _modifier(modifiers, "strength_modifier")
+    if "rating_modifier" in modifiers:
+        return _modifier(modifiers, "rating_modifier")
+    if "base_rating" in modifiers:
+        return _modifier(modifiers, "base_rating") - 0.5
+    if "rating" in modifiers:
+        return _modifier(modifiers, "rating") - 0.5
+    return 0.0
